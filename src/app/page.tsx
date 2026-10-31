@@ -1,26 +1,54 @@
-
 import { Suspense } from "react";
 import { connection } from "next/server";
 import { redirect } from "next/navigation";
 import { createClient } from "../../lib/supabase/server";
 
 async function AuthenticatedHome() {
-  // Render only when an actual request arrives.
   await connection();
 
   const supabase = await createClient();
 
-  const { data, error } = await supabase.auth.getClaims();
+  // Step 1: Verify authenticated session.
+  const { data: auth, error: authError } =
+    await supabase.auth.getClaims();
 
-  if (error || !data?.claims?.sub) {
+  if (authError || !auth?.claims?.sub) {
     redirect("/login");
   }
 
+  const userId = auth.claims.sub;
+
+  // Step 2: Check active household membership.
+  const { data: membership, error: membershipError } =
+    await supabase
+      .from("household_members")
+      .select("household_id")
+      .eq("user_id", userId)
+      .eq("status", "active")
+      .limit(1)
+      .maybeSingle();
+
+  if (membershipError) {
+    throw new Error(
+      "Unable to verify household membership."
+    );
+  }
+
+  // Step 3: First-run setup for new users.
+  if (!membership) {
+    redirect("/setup");
+  }
+
+  // Step 4: Authenticated user with an active household.
   return (
     <main className="flex min-h-dvh items-center justify-center bg-zinc-950 px-4 text-zinc-100">
       <div className="w-full max-w-md rounded-2xl border border-zinc-800 bg-zinc-900 p-8 text-center">
-        <h1 className="text-3xl font-bold">
+        <p className="text-sm font-medium text-emerald-400">
           Family Budget
+        </p>
+
+        <h1 className="mt-4 text-3xl font-bold">
+          Dashboard
         </h1>
 
         <p className="mt-6 text-emerald-400">
@@ -28,11 +56,11 @@ async function AuthenticatedHome() {
         </p>
 
         <p className="mt-3 text-sm text-zinc-400">
-          Сървърът потвърди твоята Auth сесия.
+          Профилът има активно домакинство.
         </p>
 
         <p className="mt-8 text-xs text-zinc-500">
-          Dashboard е в процес на разработка.
+          Финансовият Dashboard предстои.
         </p>
       </div>
     </main>
@@ -43,8 +71,8 @@ export default function HomePage() {
   return (
     <Suspense
       fallback={
-        <main className="flex min-h-dvh items-center justify-center bg-zinc-950 text-zinc-400">
-          Проверка на сесията...
+        <main className="flex min-h-dvh items-center justify-center bg-zinc-950 px-4 text-zinc-400">
+          Проверка на профила и домакинството...
         </main>
       }
     >
